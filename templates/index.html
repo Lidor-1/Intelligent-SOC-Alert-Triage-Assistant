@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentra - SOC Triage Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+            background: #1a1a1a;
+            color: #e5e5e5;
+        }
+        
+        .smooth { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #2a2a2a; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        .badge-critical { background: #dc2626; color: white; }
+        .badge-high { background: #ea580c; color: white; }
+        .badge-medium { background: #f59e0b; color: white; }
+        .badge-low { background: #84cc16; color: white; }
+        
+        .log-row:hover { background: #252525; }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(100%); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .panel-enter { animation: slideIn 0.3s ease-out; }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .spinner { animation: spin 1s linear infinite; }
+        
+        select, input[type="text"] {
+            background: #2a2a2a;
+            border: 1px solid #404040;
+            color: #e5e5e5;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        select:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary { background: #0066cc; color: white; }
+        .btn-primary:hover { background: #0052a3; }
+        .btn-secondary { background: #404040; color: #e5e5e5; }
+        .btn-secondary:hover { background: #4a4a4a; }
+        
+        .card {
+            background: #252525;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        
+        .priority-critical { border-left: 4px solid #dc2626; }
+        .priority-high { border-left: 4px solid #ea580c; }
+        .priority-medium { border-left: 4px solid #f59e0b; }
+        .priority-low { border-left: 4px solid #84cc16; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header style="background: #1f1f1f; border-bottom: 1px solid #333; padding: 20px 0;">
+        <div style="max-width: 1400px; margin: 0 auto; padding: 0 24px;">
+            <h1 style="font-size: 24px; font-weight: 600; color: #ffffff; margin-bottom: 4px;">
+                Sentra - SOC Triage Assistant
+            </h1>
+            <p style="font-size: 14px; color: #999;">
+                Professional security log analysis with intelligent correlation
+            </p>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div style="max-width: 1400px; margin: 0 auto; padding: 24px;">
+        
+        <!-- Upload & Controls -->
+        <div class="card" style="margin-bottom: 24px;">
+            <div style="display: flex; gap: 24px; align-items: flex-start;">
+                <!-- Upload -->
+                <div style="flex: 1;">
+                    <label style="display: block; font-size: 13px; font-weight: 500; color: #999; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
+                        Upload Log File
+                    </label>
+                    <div style="display: flex; gap: 12px;">
+                        <input 
+                            type="file" 
+                            id="logFile" 
+                            accept=".json,.jsonl,.csv,.log,.txt"
+                            style="flex: 1; padding: 10px; background: #2a2a2a; border: 1px solid #404040; border-radius: 6px; color: #e5e5e5; font-size: 14px;"
+                        >
+                        <button id="uploadBtn" class="btn btn-primary">
+                            Parse Logs
+                        </button>
+                    </div>
+                    <p style="font-size: 12px; color: #666; margin-top: 8px;">
+                        Supports: JSON, JSONL, CSV, syslog (.log, .txt)
+                    </p>
+                </div>
+                
+                <!-- Stats -->
+                <div class="card" style="min-width: 200px;">
+                    <div style="font-size: 13px; font-weight: 500; color: #999; margin-bottom: 12px;">
+                        Log Statistics
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: #999;">Total:</span>
+                            <span id="totalLogs" style="color: #0066cc; font-weight: 500;">0</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: #999;">Critical/High:</span>
+                            <span id="highLogs" style="color: #ea580c; font-weight: 500;">0</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: #999;">Medium:</span>
+                            <span id="mediumLogs" style="color: #f59e0b; font-weight: 500;">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters & Sorting -->
+        <div class="card" style="margin-bottom: 16px;">
+            <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                <div>
+                    <label style="font-size: 12px; color: #999; margin-right: 8px;">Sort by:</label>
+                    <select id="sortBy" style="width: 150px;">
+                        <option value="severity">Severity</option>
+                        <option value="timestamp">Timestamp</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label style="font-size: 12px; color: #999; margin-right: 8px;">Filter:</label>
+                    <select id="filterBy" style="width: 180px;">
+                        <option value="all">All Events</option>
+                        <option value="critical-high">Critical & High Only</option>
+                        <option value="after-hours">After Hours</option>
+                        <option value="external-ip">External IPs</option>
+                        <option value="privileged">Privileged Users</option>
+                        <option value="critical-assets">Critical Assets</option>
+                    </select>
+                </div>
+                
+                <div style="flex: 1;"></div>
+                
+                <div style="display: flex; gap: 8px;">
+                    <button id="viewAll" class="btn btn-primary" onclick="setView('all')">
+                        All Events (<span id="countAll">0</span>)
+                    </button>
+                    <button id="viewPriority" class="btn btn-secondary" onclick="setView('priority')">
+                        🔥 Priority (<span id="countPriority">0</span>)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Table -->
+        <div id="logsContainer">
+            <div id="logsTable"></div>
+            
+            <!-- Loading -->
+            <div id="loadingState" style="display: none; text-align: center; padding: 60px 0;">
+                <div class="spinner" style="width: 40px; height: 40px; border: 3px solid #333; border-top-color: #0066cc; border-radius: 50%; margin: 0 auto 16px;"></div>
+                <p style="color: #999;">Processing logs...</p>
+            </div>
+            
+            <!-- Empty -->
+            <div id="emptyState" class="card" style="text-align: center; padding: 60px 0;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" style="margin: 0 auto 16px;">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="12" y1="18" x2="12" y2="12"></line>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                </svg>
+                <h3 style="font-size: 18px; font-weight: 500; color: #fff; margin-bottom: 8px;">
+                    No logs loaded
+                </h3>
+                <p style="color: #999; font-size: 14px;">
+                    Upload a log file to begin analysis
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Panel -->
+    <div id="analysisPanel" style="display: none; position: fixed; top: 0; right: 0; width: 600px; height: 100vh; background: #1f1f1f; border-left: 1px solid #333; overflow-y: auto; z-index: 1000; box-shadow: -4px 0 24px rgba(0,0,0,0.3);">
+        <!-- Header -->
+        <div style="position: sticky; top: 0; background: #252525; border-bottom: 1px solid #333; padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
+            <h2 style="font-size: 18px; font-weight: 600; color: #fff;">Security Analysis</h2>
+            <button id="closePanel" style="background: none; border: none; color: #999; cursor: pointer; font-size: 24px; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px;" onmouseover="this.style.background='#333'" onmouseout="this.style.background='none'">
+                ×
+            </button>
+        </div>
+        
+        <!-- Content -->
+        <div id="panelContent" style="padding: 24px;">
+            <div style="text-align: center; padding: 60px 0; color: #666;">
+                <p>Select a log to view analysis</p>
+            </div>
+        </div>
+        
+        <!-- Actions -->
+        <div id="panelActions" style="display: none; position: sticky; bottom: 0; background: #252525; border-top: 1px solid #333; padding: 20px 24px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <button onclick="recordFeedback('true_positive')" style="padding: 12px; background: #16a34a; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px;" onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'">
+                    ✓ Confirm Threat
+                </button>
+                <button onclick="recordFeedback('false_positive')" style="padding: 12px; background: #6b7280; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px;" onmouseover="this.style.background='#4b5563'" onmouseout="this.style.background='#6b7280'">
+                    ✗ False Positive
+                </button>
+                <button onclick="recordFeedback('benign')" style="padding: 12px; background: #0066cc; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px;" onmouseover="this.style.background='#0052a3'" onmouseout="this.style.background='#0066cc'">
+                    ✓ Benign
+                </button>
+                <button onclick="recordFeedback('escalated')" style="padding: 12px; background: #dc2626; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px;" onmouseover="this.style.background='#b91c1c'" onmouseout="this.style.background='#dc2626'">
+                    ⚠ Escalate
+                </button>
+            </div>
+            <button id="askQuestion" style="width: 100%; padding: 12px; background: #7c3aed; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px;" onmouseover="this.style.background='#6d28d9'" onmouseout="this.style.background='#7c3aed'">
+                💬 Ask Question
+            </button>
+        </div>
+    </div>
+
+    <script>
+    let currentLog = null;
+    let allLogs = [];
+    let currentView = 'all';
+    let currentSort = 'severity';
+    let currentFilter = 'all';
+
+    document.getElementById('emptyState').style.display = 'block';
+
+    // Upload
+    document.getElementById('uploadBtn').addEventListener('click', async () => {
+        const fileInput = document.getElementById('logFile');
+        if (!fileInput.files.length) {
+            alert('Please choose a file');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('logfile', fileInput.files[0]);
+        
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('loadingState').style.display = 'block';
+        document.getElementById('logsTable').innerHTML = '';
+
+        try {
+            const response = await fetch('/upload_logs', { method: 'POST', body: formData });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Upload failed');
+            }
+            
+            allLogs = await response.json();
+            document.getElementById('loadingState').style.display = 'none';
+            
+            if (allLogs.length === 0) {
+                document.getElementById('emptyState').style.display = 'block';
+                alert('No logs found');
+            } else {
+                updateStats();
+                displayLogs();
+            }
+        } catch (err) {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'block';
+            alert('Error: ' + err.message);
+        }
+    });
+
+    // Sort/Filter
+    document.getElementById('sortBy').addEventListener('change', (e) => {
+        currentSort = e.target.value;
+        displayLogs();
+    });
+
+    document.getElementById('filterBy').addEventListener('change', (e) => {
+        currentFilter = e.target.value;
+        displayLogs();
+    });
+
+    function setView(view) {
+        currentView = view;
+        displayLogs();
+        
+        document.getElementById('viewAll').className = view === 'all' ? 'btn btn-primary' : 'btn btn-secondary';
+        document.getElementById('viewPriority').className = view === 'priority' ? 'btn btn-primary' : 'btn btn-secondary';
+    }
+
+    function updateStats() {
+        const total = allLogs.length;
+        const high = allLogs.filter(l => ['High', 'Critical'].includes(l.severity)).length;
+        const medium = allLogs.filter(l => l.severity === 'Medium').length;
+        
+        document.getElementById('totalLogs').textContent = total;
+        document.getElementById('highLogs').textContent = high;
+        document.getElementById('mediumLogs').textContent = medium;
+        document.getElementById('countAll').textContent = total;
+        document.getElementById('countPriority').textContent = high;
+    }
+
+    function displayLogs() {
+        const container = document.getElementById('logsTable');
+        if (!allLogs || allLogs.length === 0) {
+            document.getElementById('emptyState').style.display = 'block';
+            return;
+        }
+
+        document.getElementById('emptyState').style.display = 'none';
+
+        let filtered = [...allLogs];
+        
+        // Filters
+        if (currentFilter === 'critical-high') {
+            filtered = filtered.filter(l => ['Critical', 'High'].includes(l.severity));
+        } else if (currentFilter === 'after-hours') {
+            filtered = filtered.filter(l => !l.context?.time_context?.is_business_hours);
+        } else if (currentFilter === 'external-ip') {
+            filtered = filtered.filter(l => l.context?.network_context?.has_external_ip);
+        } else if (currentFilter === 'privileged') {
+            filtered = filtered.filter(l => l.context?.user_context?.is_privileged);
+        } else if (currentFilter === 'critical-assets') {
+            filtered = filtered.filter(l => l.context?.asset_context?.is_critical);
+        }
+
+        // View
+        if (currentView === 'priority') {
+            filtered = filtered.filter(l => ['Critical', 'High'].includes(l.severity));
+        }
+
+        // Sort
+        if (currentSort === 'severity') {
+            const order = { 'Critical': 0, 'High': 1, 'Medium': 2, 'Low': 3, 'Unknown': 4 };
+            filtered.sort((a, b) => order[a.severity] - order[b.severity]);
+        } else if (currentSort === 'timestamp') {
+            filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        }
+
+        // Build table
+        let html = '<div style="overflow-x: auto;">';
+        html += '<table style="width: 100%; border-collapse: collapse;">';
+        
+        html += '<thead style="background: #252525; position: sticky; top: 0; z-index: 5;">';
+        html += '<tr>';
+        ['Timestamp', 'Host', 'User', 'Event', 'Severity', 'Context'].forEach(h => {
+            html += `<th style="padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #333;">${h}</th>`;
+        });
+        html += '</tr></thead>';
+        
+        html += '<tbody>';
+        filtered.forEach((log, idx) => {
+            const severityClass = log.severity === 'Critical' ? 'badge-critical' : 
+                                 log.severity === 'High' ? 'badge-high' :
+                                 log.severity === 'Medium' ? 'badge-medium' : 'badge-low';
+            
+            const priorityClass = log.severity === 'Critical' ? 'priority-critical' :
+                                 log.severity === 'High' ? 'priority-high' :
+                                 log.severity === 'Medium' ? 'priority-medium' : 'priority-low';
+            
+            let signals = [];
+            if (log.context?.asset_context?.is_critical) signals.push('🔴');
+            if (log.context?.user_context?.is_privileged) signals.push('👑');
+            if (!log.context?.time_context?.is_business_hours) signals.push('🌙');
+            if (log.context?.network_context?.has_external_ip) signals.push('🌐');
+            
+            html += `<tr class="log-row smooth ${priorityClass}" style="cursor: pointer; border-bottom: 1px solid #2a2a2a;" onclick='showAnalysis(${allLogs.indexOf(log)})'>`;
+            html += `<td style="padding: 12px 16px; font-size: 13px; color: #ccc;">${log.timestamp || '-'}</td>`;
+            html += `<td style="padding: 12px 16px; font-size: 13px; color: #ccc; font-weight: 500;">${log.host || '-'}</td>`;
+            html += `<td style="padding: 12px 16px; font-size: 13px; color: #999;">${log.user || '-'}</td>`;
+            html += `<td style="padding: 12px 16px; font-size: 13px; color: #e5e5e5; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${log.event}">${log.event || '-'}</td>`;
+            html += `<td style="padding: 12px 16px;"><span class="${severityClass}" style="padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;">${log.severity || 'Unknown'}</span></td>`;
+            html += `<td style="padding: 12px 16px; font-size: 16px;">${signals.join(' ') || '-'}</td>`;
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        
+        container.innerHTML = html;
+    }
+
+    async function showAnalysis(idx) {
+        currentLog = allLogs[idx];
+        
+        const panel = document.getElementById('analysisPanel');
+        const content = document.getElementById('panelContent');
+        const actions = document.getElementById('panelActions');
+        
+        panel.style.display = 'block';
+        panel.classList.add('panel-enter');
+        
+        content.innerHTML = `
+            <div style="text-align: center; padding: 60px 0;">
+                <div class="spinner" style="width: 40px; height: 40px; border: 3px solid #333; border-top-color: #0066cc; border-radius: 50%; margin: 0 auto 16px;"></div>
+                <p style="color: #999;">Analyzing...</p>
+            </div>
+        `;
+        
+        try {
+            const response = await fetch('/analyze_log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(currentLog)
+            });
+            
+            const analysis = await response.json();
+            displayAnalysis(currentLog, analysis);
+            actions.style.display = 'block';
+        } catch (err) {
+            content.innerHTML = `
+                <div style="text-align: center; padding: 60px 0; color: #dc2626;">
+                    <p>Error: ${err.message}</p>
+                </div>
+            `;
+        }
+    }
+
+    function displayAnalysis(log, analysis) {
+        const content = document.getElementById('panelContent');
+        
+        const riskColor = analysis.risk_level === 'Critical' ? '#dc2626' :
+                         analysis.risk_level === 'High' ? '#ea580c' :
+                         analysis.risk_level === 'Medium' ? '#f59e0b' : '#84cc16';
+        
+        let html = '<div style="display: flex; flex-direction: column; gap: 20px;">';
+        
+        // Risk Score
+        html += `
+        <div class="card" style="text-align: center; background: linear-gradient(135deg, #252525 0%, #2a2a2a 100%);">
+            <div style="font-size: 12px; color: #999; text-transform: uppercase; margin-bottom: 8px;">Risk Score</div>
+            <div style="font-size: 48px; font-weight: 700; color: ${riskColor};">${analysis.risk_score}/100</div>
+            <div style="font-size: 16px; font-weight: 600; color: ${riskColor}; margin-bottom: 12px;">${analysis.risk_level} Risk</div>
+            <div style="font-size: 13px; color: #ccc;">${analysis.risk_recommendation}</div>
+        </div>`;
+        
+        // Metrics
+        html += `
+        <div class="card">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 13px;">
+                <div>
+                    <div style="color: #999; margin-bottom: 4px;">AI Confidence</div>
+                    <div style="color: #16a34a; font-weight: 600; font-size: 18px;">${analysis.confidence}</div>
+                </div>
+                <div>
+                    <div style="color: #999; margin-bottom: 4px;">False Positive</div>
+                    <div style="color: #f59e0b; font-weight: 600; font-size: 18px;">${analysis.false_positive_probability}</div>
+                </div>
+            </div>
+        </div>`;
+        
+        // Why Suspicious
+        if (analysis.why_suspicious && analysis.why_suspicious.length > 0) {
+            html += '<div class="card">';
+            html += '<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 12px;">🔍 WHY SUSPICIOUS</div>';
+            html += '<ul style="list-style: none; padding: 0; margin: 0;">';
+            analysis.why_suspicious.forEach(item => {
+                html += `<li style="font-size: 13px; color: #ccc; padding: 6px 0; padding-left: 20px; position: relative;">
+                    <span style="position: absolute; left: 0; color: ${riskColor};">•</span>
+                    ${item}
+                </li>`;
+            });
+            html += '</ul></div>';
+        }
+        
+        // Attack Chain
+        if (analysis.correlations?.attack_chain?.detected) {
+            const chain = analysis.correlations.attack_chain;
+            html += '<div class="card" style="border-left: 4px solid #dc2626;">';
+            html += '<div style="font-size: 13px; font-weight: 600; color: #dc2626; margin-bottom: 12px;">⚠️ ATTACK CHAIN</div>';
+            chain.patterns.forEach(p => {
+                html += `<div style="margin-bottom: 12px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #fff;">${p.name}</div>
+                    <div style="font-size: 13px; color: #ccc;">${p.description}</div>
+                    <div style="font-size: 12px; color: #999;">MITRE: ${p.mitre}</div>
+                </div>`;
+            });
+            html += '</div>';
+        }
+        
+        // Related Events
+        if (analysis.correlations?.related_events?.length > 0) {
+            html += '<div class="card">';
+            html += '<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 12px;">📍 RELATED EVENTS</div>';
+            analysis.correlations.related_events.forEach(evt => {
+                html += `<div style="font-size: 13px; color: #ccc; margin-bottom: 8px; padding: 8px; background: #2a2a2a; border-radius: 4px;">
+                    ${evt.icon} ${evt.text}
+                </div>`;
+            });
+            html += '</div>';
+        }
+        
+        // Pattern History
+        if (analysis.history?.has_history) {
+            const h = analysis.history;
+            html += '<div class="card" style="border-left: 4px solid #7c3aed;">';
+            html += '<div style="font-size: 13px; font-weight: 600; color: #7c3aed; margin-bottom: 12px;">📊 PATTERN HISTORY</div>';
+            html += `<div style="font-size: 13px; color: #ccc;">Seen ${h.seen_count} time(s)</div>`;
+            if (h.false_positive_count > 0) {
+                html += `<div style="font-size: 13px; color: #999;">• False Positives: ${h.false_positive_count} (${h.false_positive_rate}%)</div>`;
+            }
+            html += `<div style="font-size: 13px; color: #7c3aed; font-weight: 600; margin-top: 8px;">${h.recommendation}</div>`;
+            html += '</div>';
+        }
+        
+        // Investigation Checklist
+        if (analysis.playbook?.checklist?.length > 0) {
+            html += '<div class="card" style="border-left: 4px solid #0066cc;">';
+            html += '<div style="font-size: 13px; font-weight: 600; color: #0066cc; margin-bottom: 12px;">✅ INVESTIGATION CHECKLIST</div>';
+            html += '<div style="font-size: 12px; color: #999; margin-bottom: 12px;">' + (analysis.playbook.event_name || 'Security Event') + '</div>';
+            analysis.playbook.checklist.forEach((item, i) => {
+                html += `<label style="display: flex; gap: 8px; margin-bottom: 8px; cursor: pointer; font-size: 13px; color: #ccc;">
+                    <input type="checkbox" style="margin-top: 2px;">
+                    <span>${item}</span>
+                </label>`;
+            });
+            html += '</div>';
+        }
+        
+        // Risk Breakdown
+        if (analysis.risk_components?.length > 0) {
+            html += '<div class="card">';
+            html += '<div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 12px;">RISK BREAKDOWN</div>';
+            analysis.risk_components.forEach(c => {
+                const color = c.score > 0 ? '#ea580c' : '#16a34a';
+                html += `<div style="display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #2a2a2a;">
+                    <div>
+                        <div style="font-size: 13px; color: #e5e5e5; font-weight: 500;">${c.factor}</div>
+                        <div style="font-size: 12px; color: #999;">${c.reason}</div>
+                    </div>
+                    <div style="font-size: 16px; font-weight: 600; color: ${color};">${c.score > 0 ? '+' : ''}${c.score}</div>
+                </div>`;
+            });
+            html += '</div>';
+        }
+        
+        // MITRE
+        if (analysis.playbook?.mitre_tactics?.length > 0 && analysis.playbook.mitre_tactics[0] !== "No specific tactics identified") {
+            html += '<div class="card">';
+            html += '<div style="font-size: 13px; font-weight: 600; color: #dc2626; margin-bottom: 12px;">🎯 MITRE ATT&CK</div>';
+            html += '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+            analysis.playbook.mitre_tactics.forEach(t => {
+                html += `<span style="padding: 6px 12px; background: #2a2a2a; border-radius: 4px; font-size: 12px; color: #ccc;">${t}</span>`;
+            });
+            html += '</div></div>';
+        }
+        
+        html += '</div>';
+        content.innerHTML = html;
+    }
+
+    // Panel controls
+    document.getElementById('closePanel').addEventListener('click', () => {
+        document.getElementById('analysisPanel').style.display = 'none';
+    });
+
+    document.getElementById('askQuestion').addEventListener('click', async () => {
+        if (!currentLog) return;
+
+        const question = prompt('Ask a question:\n\n- Is this a false positive?\n- What should I investigate next?\n- How serious is this?');
+        
+        if (!question?.trim()) return;
+
+        const content = document.getElementById('panelContent');
+        content.innerHTML = '<div style="text-align: center; padding: 60px 0;"><div class="spinner" style="width: 40px; height: 40px; border: 3px solid #333; border-top-color: #0066cc; border-radius: 50%; margin: 0 auto;"></div></div>';
+
+        try {
+            const response = await fetch('/ask_question', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ log_entry: currentLog, question })
+            });
+            
+            const data = await response.json();
+            
+            content.innerHTML = `
+                <div class="card" style="border-left: 4px solid #0066cc; margin-bottom: 16px;">
+                    <div style="font-size: 13px; font-weight: 600; color: #0066cc; margin-bottom: 8px;">Question</div>
+                    <div style="font-size: 14px; color: #e5e5e5;">${question}</div>
+                </div>
+                <div class="card">
+                    <div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">ANSWER</div>
+                    <div style="font-size: 14px; color: #ccc; line-height: 1.6; white-space: pre-wrap;">${data.answer}</div>
+                </div>
+                <button onclick="showAnalysis(allLogs.indexOf(currentLog))" class="btn btn-secondary" style="width: 100%; margin-top: 16px;">
+                    ← Back
+                </button>
+            `;
+        } catch (err) {
+            content.innerHTML = `<div style="color: #dc2626;">Error: ${err.message}</div>`;
+        }
+    });
+
+    async function recordFeedback(type) {
+        if (!currentLog) return;
+
+        const notes = type === 'escalated' ? prompt('Notes (optional):') || '' : '';
+
+        try {
+            const response = await fetch('/record_feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    log_entry: currentLog,
+                    feedback_type: type,
+                    notes,
+                    analyst_name: 'analyst'
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                alert('✓ Feedback recorded!\n\nThis pattern will be remembered.');
+                showAnalysis(allLogs.indexOf(currentLog));
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+    </script>
+</body>
+</html>
