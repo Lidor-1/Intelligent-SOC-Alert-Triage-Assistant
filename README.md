@@ -105,7 +105,7 @@ internal_networks:
 
 ## FAQ
 
-**Q: Does this replace my SIEM?**  
+**Q: Does this replace SIEM?**  
 A: No. Sentra is designed to work WITH your existing tools. It's a triage layer that helps analysts prioritize and investigate alerts more efficiently.
 
 **Q: Do I need Claude API?**  
