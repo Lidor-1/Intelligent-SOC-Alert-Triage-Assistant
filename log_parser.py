@@ -9,17 +9,21 @@ def load_logs(file_path):
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             if file_path.endswith('.json'):
-                # Try standard JSON array first
+                content = f.read()
+                
+                # Check if it's JSONL format (each line is a JSON object)
+                # JSONL files start with { and have newlines between objects
+                if content.strip().startswith('{') and '\n{' in content:
+                    return parse_jsonl(content)
+                
+                # Otherwise try standard JSON array
                 try:
-                    data = json.load(f)
+                    data = json.loads(content)
                     return normalize_logs(data)
                 except json.JSONDecodeError as e:
-                    # If that fails, try line-delimited JSON
-                    f.seek(0)  # Reset file pointer
-                    content = f.read()
-                    if "Extra data" in str(e) or e.pos < len(content) - 10:
-                        return parse_jsonl(content)
-                    raise
+                    # Last resort: try JSONL
+                    return parse_jsonl(content)
+                    
             elif file_path.endswith('.csv'):
                 reader = csv.DictReader(f)
                 return normalize_logs(list(reader))
@@ -29,6 +33,8 @@ def load_logs(file_path):
                 return parse_text_logs(content)
     except Exception as e:
         print(f"Error loading logs: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 def parse_uploaded_file(content, filename):
@@ -38,15 +44,17 @@ def parse_uploaded_file(content, filename):
         text_content = content.decode('utf-8')
         
         if filename.endswith('.json'):
-            # Try standard JSON array first
+            # Check if it's JSONL format first
+            if text_content.strip().startswith('{') and '\n{' in text_content:
+                return parse_jsonl(text_content)
+            
+            # Try standard JSON array
             try:
                 data = json.loads(text_content)
                 return normalize_logs(data)
             except json.JSONDecodeError as e:
-                # If that fails, try line-delimited JSON (JSONL/NDJSON)
-                if "Extra data" in str(e) or e.pos < len(text_content) - 10:
-                    return parse_jsonl(text_content)
-                raise
+                # Last resort: try JSONL
+                return parse_jsonl(text_content)
         
         elif filename.endswith('.jsonl') or filename.endswith('.ndjson'):
             # Line-delimited JSON format
@@ -61,7 +69,11 @@ def parse_uploaded_file(content, filename):
         
         else:
             # Try to auto-detect format
-            # First try JSON
+            # First check for JSONL
+            if text_content.strip().startswith('{') and '\n{' in text_content:
+                return parse_jsonl(text_content)
+            
+            # Then try JSON array
             try:
                 data = json.loads(text_content)
                 return normalize_logs(data)
@@ -170,12 +182,48 @@ def normalize_logs(data):
         normalized = []
         for item in data:
             if isinstance(item, dict):
+                # Extract fields with multiple possible names
+                timestamp = (item.get("timestamp") or 
+                           item.get("EventTime") or 
+                           item.get("time") or 
+                           item.get("date") or 
+                           "N/A")
+                
+                host = (item.get("host") or 
+                       item.get("Hostname") or 
+                       item.get("hostname") or 
+                       item.get("computer") or 
+                       item.get("Computer") or 
+                       "N/A")
+                
+                user = (item.get("user") or 
+                       item.get("SubjectUserName") or 
+                       item.get("TargetUserName") or 
+                       item.get("username") or 
+                       item.get("account") or 
+                       "N/A")
+                
+                event = (item.get("event") or 
+                        item.get("Message") or 
+                        item.get("message") or 
+                        item.get("description") or 
+                        "N/A")
+                
+                # Get raw severity and normalize it
+                raw_severity = (item.get("severity") or 
+                              item.get("Severity") or 
+                              item.get("level") or 
+                              "Unknown")
+                
+                # Normalize severity - map Windows Event Log levels to our standard levels
+                severity = normalize_severity(raw_severity, event, item)
+                
                 normalized.append({
-                    "timestamp": item.get("timestamp", item.get("time", item.get("date", "N/A"))),
-                    "host": item.get("host", item.get("hostname", item.get("computer", "N/A"))),
-                    "user": item.get("user", item.get("username", item.get("account", "N/A"))),
-                    "event": item.get("event", item.get("message", item.get("description", "N/A"))),
-                    "severity": item.get("severity", item.get("level", detect_severity(str(item)))),
+                    "timestamp": timestamp,
+                    "host": host,
+                    "user": user,
+                    "event": event,
+                    "severity": severity,
                     "status": item.get("status", "Pending"),
                     "raw": str(item)
                 })
@@ -189,24 +237,138 @@ def normalize_logs(data):
                 return normalize_logs(data[key])
         
         # If it's a single log entry
+        timestamp = (data.get("timestamp") or 
+                   data.get("EventTime") or 
+                   data.get("time") or 
+                   "N/A")
+        
+        host = (data.get("host") or 
+               data.get("Hostname") or 
+               data.get("hostname") or 
+               "N/A")
+        
+        user = (data.get("user") or 
+               data.get("SubjectUserName") or 
+               data.get("TargetUserName") or 
+               data.get("username") or 
+               "N/A")
+        
+        event = (data.get("event") or 
+                data.get("Message") or 
+                data.get("message") or 
+                "N/A")
+        
+        raw_severity = (data.get("severity") or 
+                      data.get("Severity") or 
+                      data.get("level") or 
+                      "Unknown")
+        
+        severity = normalize_severity(raw_severity, event, data)
+        
         return [{
-            "timestamp": data.get("timestamp", data.get("time", "N/A")),
-            "host": data.get("host", data.get("hostname", "N/A")),
-            "user": data.get("user", data.get("username", "N/A")),
-            "event": data.get("event", data.get("message", "N/A")),
-            "severity": data.get("severity", "Unknown"),
+            "timestamp": timestamp,
+            "host": host,
+            "user": user,
+            "event": event,
+            "severity": severity,
             "status": data.get("status", "Pending"),
             "raw": str(data)
         }]
     
     return []
 
+def normalize_severity(raw_severity, event_text, full_item):
+    """
+    Normalize severity from various formats to our standard: Low, Medium, High, Critical
+    Maps Windows Event Log levels (INFO, WARNING, ERROR, etc.) and detects based on content
+    """
+    severity_str = str(raw_severity).upper()
+    
+    # Map Windows Event Log severity levels
+    if severity_str in ['CRITICAL', 'FATAL', 'EMERGENCY']:
+        return 'Critical'
+    elif severity_str in ['ERROR', 'FAIL', 'FAILURE']:
+        return 'High'
+    elif severity_str in ['WARNING', 'WARN']:
+        # Check if it's security-related - if so, escalate to High
+        event_id = full_item.get('EventID')
+        if event_id and int(event_id) >= 4000 and int(event_id) < 5000:
+            return 'High'  # Windows Security events
+        return 'Medium'
+    elif severity_str in ['INFO', 'INFORMATION', 'INFORMATIONAL', 'NOTICE']:
+        # INFO events can still be high severity based on content
+        # Check event ID and content for suspicious activity
+        event_id = full_item.get('EventID')
+        
+        # Critical Windows Event IDs (account/group changes)
+        critical_event_ids = [
+            4720,  # User account created
+            4722,  # User account enabled
+            4724,  # Password reset attempt
+            4728,  # Member added to security group
+            4732,  # Member added to local group
+            4756,  # Member added to universal group
+        ]
+        
+        # High severity Event IDs (authentication, privileges, sensitive operations)
+        high_event_ids = [
+            4625,  # Failed logon
+            4648,  # Logon with explicit credentials
+            4672,  # Special privileges assigned
+            4673,  # Privileged service called
+            4674,  # Operation attempted on privileged object
+            4740,  # Account lockout
+            4768,  # Kerberos TGT requested
+            4769,  # Kerberos service ticket
+            4776,  # Credential validation
+            4670,  # Permissions changed
+            4662,  # Operation performed on object
+            4702,  # Scheduled task created
+        ]
+        
+        # Medium severity Event IDs (process, network)
+        medium_event_ids = [
+            4624,  # Successful logon
+            4634,  # Logoff
+            4688,  # Process created
+            5140,  # Network share accessed
+            5156,  # Network connection
+            5145,  # Network share checked
+        ]
+        
+        if event_id in critical_event_ids:
+            return 'High'  # Escalate to High for important events
+        elif event_id in high_event_ids:
+            return 'High'  # Also High for authentication/privilege events
+        elif event_id in medium_event_ids:
+            return 'Medium'
+        
+        # Check event content for suspicious keywords
+        return detect_severity(str(event_text))
+    elif severity_str in ['DEBUG', 'TRACE', 'VERBOSE']:
+        return 'Low'
+    elif severity_str in ['HIGH']:
+        return 'High'
+    elif severity_str in ['MEDIUM']:
+        return 'Medium'
+    elif severity_str in ['LOW']:
+        return 'Low'
+    else:
+        # Unknown severity - detect from content
+        return detect_severity(str(event_text))
+
+
 def detect_severity(text):
     """Detect severity based on keywords in the text"""
     text_lower = str(text).lower()
     
-    high_keywords = ["critical", "error", "failed", "failure", "unauthorized", "denied", "attack", "breach", "malware", "suspicious"]
-    medium_keywords = ["warning", "warn", "alert", "unusual", "retry", "timeout"]
+    critical_keywords = ["critical", "breach", "compromised", "ransomware", "malware", "exploit", "backdoor"]
+    high_keywords = ["error", "failed", "failure", "unauthorized", "denied", "attack", "suspicious", "violation"]
+    medium_keywords = ["warning", "warn", "alert", "unusual", "retry", "timeout", "anomaly"]
+    
+    for keyword in critical_keywords:
+        if keyword in text_lower:
+            return "Critical"
     
     for keyword in high_keywords:
         if keyword in text_lower:
