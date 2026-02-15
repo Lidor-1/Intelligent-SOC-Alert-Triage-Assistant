@@ -1,4 +1,4 @@
-# Sentra - SOC Triage Copilot
+# 🛡️ Sentra - SOC Triage Copilot
 
 Sentra is an intelligent security alert triage assistant that helps SOC analysts cut through the noise and focus on what actually matters.
 
