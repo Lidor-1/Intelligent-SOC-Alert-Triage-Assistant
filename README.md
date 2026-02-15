@@ -18,22 +18,22 @@ Sentra sits between your logs and your analysts, acting as an intelligent triage
 - **What makes it suspicious** - "5+ failures in 10 minutes"
 - **What to check next** - "Look for Event ID 4624 after the failures"
 - **MITRE ATT&CK mapping** - "T1110 - Brute Force"
-<img width="1905" height="826" alt="Image 2" src="https://github.com/user-attachments/assets/9fa7de39-c303-415d-8433-c8bbb798c331" />
+<img width="1563" height="945" alt="Image1" src="https://github.com/user-attachments/assets/8baade55-5a38-4d06-a093-8c209f978ad8" />
 
 Sentra will also provide risk score based on 
 + Base Severity (30 points)
 + Critical Asset - Domain Controller (30 points)
 + After Hours Activity (15 points)
 - Known Pattern - Usually Benign (-10 points)
-<img width="1905" height="827" alt="Image 1" src="https://github.com/user-attachments/assets/6332f1cc-7067-4dc1-8a65-96ed403265aa" />
+<img width="1731" height="955" alt="Image2" src="https://github.com/user-attachments/assets/9cbe20ed-b974-4dc6-a8d1-a7ebe2ddb68c" />
 
 
 Confidence: 81%
 False Positive Probability: 20%
-```
-You can see the reasoning, not just the conclusion.
-```
-<img width="1899" height="823" alt="Image 3" src="https://github.com/user-attachments/assets/cbf7d506-586a-4815-b83a-5e5c718edfe1" />
+
+## You can see the reasoning, not just the conclusion.
+
+<img width="1661" height="951" alt="Image3" src="https://github.com/user-attachments/assets/01acf011-7143-4202-870a-89a0a39b9ea4" />
 
 ## How It Works
 
